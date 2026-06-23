@@ -17,7 +17,12 @@ import { tileLabel, tileSuitClass, WIND_LABEL } from './tiles.js';
 
 const CPU_DELAY = 380;
 const SEAT_NAME = ['あなた', 'CPU右', 'CPU対面', 'CPU左'];
-const ABORT_REASON: Record<string, string> = { kyuushu: '九種九牌', suufon: '四風連打', suucha: '四家立直' };
+const ABORT_REASON: Record<string, string> = {
+  kyuushu: '九種九牌',
+  suufon: '四風連打',
+  suucha: '四家立直',
+  suukaikan: '四槓散了',
+};
 const newSeed = () => Math.floor(Math.random() * 2 ** 31);
 
 function TileView({ tile, onClick, disabled, back, small }: {

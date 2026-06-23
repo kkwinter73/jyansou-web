@@ -66,9 +66,12 @@ header h1 { font-size: 22px; margin: 0; }
 .tile.clickable:hover:not(:disabled) { transform: translateY(-4px); transition: transform .08s; }
 .tile.disabled { opacity: 0.4; }
 
-.hand-back .tile.back { width: 22px; height: 30px; }
+.tile.small { width: 22px; height: 30px; font-size: 12px; border-bottom-width: 2px; }
+.hand-back { display: flex; flex-wrap: wrap; }
 .discards { display: flex; flex-wrap: wrap; margin-top: 4px; min-height: 30px; }
-.discards .tile { width: 22px; height: 30px; font-size: 12px; opacity: 0.92; }
+.discards .tile { opacity: 0.92; }
+.melds { display: flex; gap: 8px; margin-top: 4px; }
+.meld { display: inline-flex; }
 
 .hand { display: flex; align-items: flex-end; margin-top: 8px; }
 .hand .drawn { margin-left: 12px; }

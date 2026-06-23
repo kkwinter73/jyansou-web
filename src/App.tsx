@@ -273,9 +273,16 @@ function ResultOverlay({ game, onNext }: { game: GameState; onNext: () => void }
           <>
             <h2>{SEAT_NAME[r.winner]} {r.type === 'tsumo' ? 'ツモ' : 'ロン'}</h2>
             <ul className="yaku">
-              {r.hand.yakumanTotal > 0
-                ? r.hand.yakuman.map((y) => <li key={y.name}>{y.name}</li>)
-                : r.hand.yaku.map((y) => <li key={y.name}>{y.name} {y.han}翻</li>)}
+              {r.hand.yakumanTotal > 0 ? (
+                r.hand.yakuman.map((y) => <li key={y.name}>{y.name}</li>)
+              ) : (
+                <>
+                  {r.hand.yaku.map((y) => <li key={y.name}>{y.name} {y.han}翻</li>)}
+                  {r.hand.dora.dora > 0 && <li>ドラ {r.hand.dora.dora}</li>}
+                  {r.hand.dora.aka > 0 && <li>赤ドラ {r.hand.dora.aka}</li>}
+                  {r.hand.dora.ura > 0 && <li>裏ドラ {r.hand.dora.ura}</li>}
+                </>
+              )}
             </ul>
             <p className="score-line">
               {r.hand.yakumanTotal > 0

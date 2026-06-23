@@ -17,6 +17,7 @@ import { tileLabel, tileSuitClass, WIND_LABEL } from './tiles.js';
 
 const CPU_DELAY = 380;
 const SEAT_NAME = ['あなた', 'CPU右', 'CPU対面', 'CPU左'];
+const ABORT_REASON: Record<string, string> = { kyuushu: '九種九牌', suufon: '四風連打', suucha: '四家立直' };
 const newSeed = () => Math.floor(Math.random() * 2 ** 31);
 
 function TileView({ tile, onClick, disabled, back, small }: {
@@ -223,6 +224,9 @@ export function App() {
             {kanActions.map((a, i) => (
               <button key={i} onClick={() => act(a)}>{callLabel(a)}</button>
             ))}
+            {myActions.some((a) => a.type === 'kyuushu') && (
+              <button onClick={() => act({ type: 'kyuushu', seat: 0 })}>九種九牌</button>
+            )}
             {myCallPending &&
               callActions.map((a, i) => (
                 <button key={i} className={a.type === 'ron' ? 'primary' : a.type === 'pass' ? '' : 'on'} onClick={() => act(a)}>
@@ -246,10 +250,19 @@ function ResultOverlay({ game, onNext }: { game: GameState; onNext: () => void }
   return (
     <div className="overlay">
       <div className="card">
-        {r.type === 'ryuukyoku' ? (
+        {r.type === 'abortive' ? (
+          <>
+            <h2>途中流局</h2>
+            <p>{ABORT_REASON[r.reason]}</p>
+          </>
+        ) : r.type === 'ryuukyoku' ? (
           <>
             <h2>流局</h2>
-            <p>聴牌: {r.tenpai.length ? r.tenpai.map((s) => SEAT_NAME[s]).join('、') : 'なし'}</p>
+            {r.nagashi && r.nagashi.length > 0 ? (
+              <p>流し満貫: {r.nagashi.map((s) => SEAT_NAME[s]).join('、')}</p>
+            ) : (
+              <p>聴牌: {r.tenpai.length ? r.tenpai.map((s) => SEAT_NAME[s]).join('、') : 'なし'}</p>
+            )}
           </>
         ) : (
           <>

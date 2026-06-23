@@ -29,6 +29,10 @@ npm run typecheck
 | 技術選定のなぜ | `../docs-hub/docs/decisions/0003-frontend-stack.md` |
 | このリポ内に閉じた設計判断 | `docs/adr/` |
 
-## 現状（基盤）
+## 現状
 
-`src/App.tsx` は core 疎通デモ（手牌→和了/聴牌/待ち判定）。状態管理は React 標準（useReducer/Context）から始め、必要になるまで外部ライブラリを入れない（ADR-0003）。
+`src/App.tsx` は**対CPU対局の盤面UI**。人間=席0、CPU=席1-3。`core` の `createGame`/`legalActions`/`apply`/`chooseAction`/`startNextHand` でループを駆動し、ツモ/打牌/リーチ/ロン/ツモ和了・流局・連荘・順位まで遊べる（鳴きは core Phase 4b 待ち）。`src/tiles.ts` は表示専用ヘルパ。
+
+- 自動進行（ツモ・CPU打牌・CPUロン/パス）は `useEffect`＋`setTimeout`。CPUの思考は core の `chooseAction`（ルールは持たない）。
+- 状態管理は React 標準（useState）。外部ライブラリは入れない（ADR-0003）。
+- 起動: `npm run dev`。

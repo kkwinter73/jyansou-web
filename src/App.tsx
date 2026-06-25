@@ -15,7 +15,7 @@ import {
 } from '@jyansou/core';
 import { tileLabel, tileSuitClass, WIND_LABEL } from './tiles.js';
 
-const CPU_DELAY = 380;
+const CPU_DELAY = 420;
 const SEAT_NAME = ['あなた', 'CPU右', 'CPU対面', 'CPU左'];
 const ABORT_REASON: Record<string, string> = {
   kyuushu: '九種九牌',
@@ -25,66 +25,33 @@ const ABORT_REASON: Record<string, string> = {
 };
 const newSeed = () => Math.floor(Math.random() * 2 ** 31);
 
-function TileView({ tile, onClick, disabled, back, small }: {
+function TileView({ tile, onClick, disabled, back, big }: {
   tile?: Tile;
   onClick?: () => void;
   disabled?: boolean;
   back?: boolean;
-  small?: boolean;
+  big?: boolean;
 }) {
-  if (back || !tile) return <span className={`tile back${small ? ' small' : ''}`} />;
-  const cls = `tile ${tileSuitClass(tile.kind)}${tile.red ? ' red' : ''}${small ? ' small' : ''}${onClick ? ' clickable' : ''}${disabled ? ' disabled' : ''}`;
+  if (back || !tile) return <span className={`tile back${big ? ' big' : ''}`} />;
+  const cls = `tile ${tileSuitClass(tile.kind)}${tile.red ? ' red' : ''}${big ? ' big' : ''}${onClick ? ' clickable' : ''}${disabled ? ' disabled' : ''}`;
   return (
     <button className={cls} onClick={onClick} disabled={disabled || !onClick} type="button">
-      {tileLabel(tile.kind)}
+      <span className="face">{tileLabel(tile.kind)}</span>
     </button>
   );
 }
 
-function Melds({ melds }: { melds: Meld[] }) {
+function MeldsRow({ melds }: { melds: Meld[] }) {
   if (melds.length === 0) return null;
   return (
     <div className="melds">
       {melds.map((m, i) => (
         <span key={i} className="meld">
           {m.tiles.map((t) => (
-            <TileView key={t.id} tile={t} small back={m.type === 'ankan'} />
+            <TileView key={t.id} tile={t} back={m.type === 'ankan'} />
           ))}
         </span>
       ))}
-    </div>
-  );
-}
-
-function Discards({ tiles }: { tiles: Tile[] }) {
-  return (
-    <div className="discards">
-      {tiles.map((t) => (
-        <TileView key={t.id} tile={t} small />
-      ))}
-    </div>
-  );
-}
-
-function OpponentPanel({ game, seat }: { game: GameState; seat: Seat }) {
-  const h = game.hands[seat];
-  return (
-    <div className="panel opp">
-      <div className="meta">
-        <span className="wind">{WIND_LABEL[seatWindOf(game, seat)]}</span>
-        <span className="name">{SEAT_NAME[seat]}</span>
-        <span className="score">{game.scores[seat]}</span>
-        {game.dealer === seat && <span className="badge">親</span>}
-        {game.riichi[seat] && <span className="badge riichi">リーチ</span>}
-        {game.turn === seat && game.phase !== 'over' && <span className="badge turn">手番</span>}
-      </div>
-      <div className="hand-back">
-        {h.concealed.map((t) => (
-          <TileView key={t.id} back small />
-        ))}
-      </div>
-      <Melds melds={h.melds} />
-      <Discards tiles={game.discards[seat]} />
     </div>
   );
 }
@@ -100,12 +67,24 @@ function callLabel(a: Action): string {
   }
 }
 
+function SeatInfo({ game, seat }: { game: GameState; seat: Seat }) {
+  const active = game.turn === seat && game.phase !== 'over';
+  return (
+    <div className={`info i${seat}${active ? ' active' : ''}`}>
+      <span className="wind">{WIND_LABEL[seatWindOf(game, seat)]}</span>
+      <span className="name">{SEAT_NAME[seat]}</span>
+      <span className="score">{game.scores[seat]}</span>
+      {game.dealer === seat && <span className="dealer">親</span>}
+      {game.riichi[seat] && <span className="riichi-stick" title="リーチ" />}
+    </div>
+  );
+}
+
 export function App() {
   const [game, setGame] = useState<GameState>(() => createGame(newSeed()));
   const [final, setFinal] = useState<RankEntry[] | null>(null);
   const [riichiMode, setRiichiMode] = useState(false);
 
-  // 自動進行: ツモ（全席）、CPUの打牌、CPUの鳴き応答（人間の応答待ちは止める）
   useEffect(() => {
     const s = game;
     if (final) return;
@@ -129,13 +108,9 @@ export function App() {
   const myTurn = game.phase === 'discard' && game.turn === 0;
   const myActions = myTurn ? legalActions(game, 0) : [];
   const canTsumo = myActions.some((a) => a.type === 'tsumo');
-  const riichiKinds = new Set(
-    myActions.flatMap((a) => (a.type === 'discard' && a.riichi ? [a.tile.kind] : [])),
-  );
-  const kanActions = myActions.filter((a) => a.type === 'kan'); // 暗槓/加槓
+  const riichiKinds = new Set(myActions.flatMap((a) => (a.type === 'discard' && a.riichi ? [a.tile.kind] : [])));
+  const kanActions = myActions.filter((a) => a.type === 'kan');
   const kuikae = new Set(game.kuikae);
-
-  // 鳴き応答（afterDiscard / afterKakan で自分が保留中）
   const myCallPending =
     (game.phase === 'afterDiscard' || game.phase === 'afterKakan') &&
     game.pendingCalls.some((p) => p.seat === 0) &&
@@ -143,8 +118,7 @@ export function App() {
   const callActions = myCallPending ? legalActions(game, 0) : [];
 
   const discardTile = (tile: Tile) => {
-    if (!myTurn) return;
-    if (kuikae.has(tile.kind)) return;
+    if (!myTurn || kuikae.has(tile.kind)) return;
     if (riichiMode) {
       if (!riichiKinds.has(tile.kind)) return;
       act({ type: 'discard', tile, riichi: true });
@@ -167,82 +141,87 @@ export function App() {
   const drawn = game.turn === 0 && game.phase === 'discard' ? game.drawnTile : null;
   const inHand = me.concealed.filter((t) => !drawn || t.id !== drawn.id);
   const wallLeft = game.liveEnd - game.drawIndex;
+  const seats: Seat[] = [0, 1, 2, 3];
 
   return (
     <div className="app">
-      <header>
-        <h1>jyansou 🀄</h1>
-        <div className="round">
-          <span>{WIND_LABEL[game.wind]}{game.dealer + 1}局</span>
-          <span>{game.honba}本場</span>
-          <span>供託 {game.riichiSticks}</span>
-          <span>残り {wallLeft}</span>
-          <span className="dora">ドラ表示{game.doraIndicators.map((t) => <TileView key={t.id} tile={t} small />)}</span>
-        </div>
-      </header>
-
-      <section className="table">
-        <OpponentPanel game={game} seat={2} />
-        <div className="mid">
-          <OpponentPanel game={game} seat={3} />
-          <OpponentPanel game={game} seat={1} />
-        </div>
-
-        <div className="panel me">
-          <div className="meta">
-            <span className="wind">{WIND_LABEL[seatWindOf(game, 0)]}</span>
-            <span className="name">{SEAT_NAME[0]}</span>
-            <span className="score">{game.scores[0]}</span>
-            {game.dealer === 0 && <span className="badge">親</span>}
-            {game.riichi[0] && <span className="badge riichi">リーチ</span>}
-            {game.turn === 0 && game.phase !== 'over' && <span className="badge turn">手番</span>}
+      <div className="table">
+        {/* 中央ハブ */}
+        <div className="hub">
+          <div className="round">{WIND_LABEL[game.wind]}{game.dealer + 1}局</div>
+          <div className="sub">{game.honba}本場 ・ 供託{game.riichiSticks}</div>
+          <div className="wall">残り {wallLeft}</div>
+          <div className="dora">
+            <span className="dora-label">ドラ</span>
+            {game.doraIndicators.map((t) => <TileView key={t.id} tile={t} />)}
           </div>
-          <Melds melds={me.melds} />
-          <Discards tiles={game.discards[0]} />
-          <div className="hand">
-            {inHand.map((t) => (
+        </div>
+
+        {/* 河（各家） */}
+        {seats.map((s) => (
+          <div key={s} className={`river r${s}`}>
+            {game.discards[s].map((t) => <TileView key={t.id} tile={t} />)}
+          </div>
+        ))}
+
+        {/* 相手の手牌（裏）と副露 */}
+        {([1, 2, 3] as Seat[]).map((s) => (
+          <div key={s} className={`ohand o${s}`}>
+            {game.hands[s].concealed.map((t) => <TileView key={t.id} back />)}
+            <MeldsRow melds={game.hands[s].melds} />
+          </div>
+        ))}
+
+        {/* 席情報 */}
+        {seats.map((s) => <SeatInfo key={s} game={game} seat={s} />)}
+      </div>
+
+      {/* 自分の手牌 */}
+      <div className="myarea">
+        <MeldsRow melds={me.melds} />
+        <div className="myhand">
+          {inHand.map((t) => (
+            <TileView
+              key={t.id}
+              tile={t}
+              big
+              onClick={myTurn ? () => discardTile(t) : undefined}
+              disabled={myTurn && ((riichiMode && !riichiKinds.has(t.kind)) || kuikae.has(t.kind))}
+            />
+          ))}
+          {drawn && (
+            <span className="drawn">
               <TileView
-                key={t.id}
-                tile={t}
-                onClick={myTurn ? () => discardTile(t) : undefined}
-                disabled={myTurn && ((riichiMode && !riichiKinds.has(t.kind)) || kuikae.has(t.kind))}
+                tile={drawn}
+                big
+                onClick={myTurn ? () => discardTile(drawn) : undefined}
+                disabled={myTurn && riichiMode && !riichiKinds.has(drawn.kind)}
               />
-            ))}
-            {drawn && (
-              <span className="drawn">
-                <TileView
-                  tile={drawn}
-                  onClick={myTurn ? () => discardTile(drawn) : undefined}
-                  disabled={myTurn && riichiMode && !riichiKinds.has(drawn.kind)}
-                />
-              </span>
-            )}
-          </div>
-
-          <div className="controls">
-            {canTsumo && <button className="primary" onClick={() => act({ type: 'tsumo' })}>ツモ</button>}
-            {riichiKinds.size > 0 && (
-              <button className={riichiMode ? 'on' : ''} onClick={() => setRiichiMode((v) => !v)}>
-                リーチ{riichiMode ? '（牌を選択）' : ''}
-              </button>
-            )}
-            {kanActions.map((a, i) => (
-              <button key={i} onClick={() => act(a)}>{callLabel(a)}</button>
-            ))}
-            {myActions.some((a) => a.type === 'kyuushu') && (
-              <button onClick={() => act({ type: 'kyuushu', seat: 0 })}>九種九牌</button>
-            )}
-            {myCallPending &&
-              callActions.map((a, i) => (
-                <button key={i} className={a.type === 'ron' ? 'primary' : a.type === 'pass' ? '' : 'on'} onClick={() => act(a)}>
-                  {callLabel(a)}
-                </button>
-              ))}
-            {!myTurn && !myCallPending && game.phase !== 'over' && <span className="hint">…</span>}
-            {myTurn && !riichiMode && <span className="hint">捨てる牌をクリック</span>}
-          </div>
+            </span>
+          )}
         </div>
-      </section>
+
+        <div className="controls">
+          {canTsumo && <button className="primary" onClick={() => act({ type: 'tsumo' })}>ツモ</button>}
+          {riichiKinds.size > 0 && (
+            <button className={riichiMode ? 'on' : ''} onClick={() => setRiichiMode((v) => !v)}>
+              リーチ{riichiMode ? '（牌を選択）' : ''}
+            </button>
+          )}
+          {kanActions.map((a, i) => <button key={i} onClick={() => act(a)}>{callLabel(a)}</button>)}
+          {myActions.some((a) => a.type === 'kyuushu') && (
+            <button onClick={() => act({ type: 'kyuushu', seat: 0 })}>九種九牌</button>
+          )}
+          {myCallPending &&
+            callActions.map((a, i) => (
+              <button key={i} className={a.type === 'ron' ? 'primary' : a.type === 'pass' ? '' : 'on'} onClick={() => act(a)}>
+                {callLabel(a)}
+              </button>
+            ))}
+          {!myTurn && !myCallPending && game.phase !== 'over' && <span className="hint">CPU思考中…</span>}
+          {myTurn && !riichiMode && <span className="hint">捨てる牌をクリック</span>}
+        </div>
+      </div>
 
       {game.phase === 'over' && !final && <ResultOverlay game={game} onNext={nextHand} />}
       {final && <FinalOverlay ranking={final} onRestart={restart} />}
@@ -277,10 +256,10 @@ function ResultOverlay({ game, onNext }: { game: GameState; onNext: () => void }
                 r.hand.yakuman.map((y) => <li key={y.name}>{y.name}</li>)
               ) : (
                 <>
-                  {r.hand.yaku.map((y) => <li key={y.name}>{y.name} {y.han}翻</li>)}
-                  {r.hand.dora.dora > 0 && <li>ドラ {r.hand.dora.dora}</li>}
-                  {r.hand.dora.aka > 0 && <li>赤ドラ {r.hand.dora.aka}</li>}
-                  {r.hand.dora.ura > 0 && <li>裏ドラ {r.hand.dora.ura}</li>}
+                  {r.hand.yaku.map((y) => <li key={y.name}>{y.name} <span>{y.han}翻</span></li>)}
+                  {r.hand.dora.dora > 0 && <li>ドラ <span>{r.hand.dora.dora}</span></li>}
+                  {r.hand.dora.aka > 0 && <li>赤ドラ <span>{r.hand.dora.aka}</span></li>}
+                  {r.hand.dora.ura > 0 && <li>裏ドラ <span>{r.hand.dora.ura}</span></li>}
                 </>
               )}
             </ul>
@@ -288,14 +267,14 @@ function ResultOverlay({ game, onNext }: { game: GameState; onNext: () => void }
               {r.hand.yakumanTotal > 0
                 ? `役満${r.hand.yakumanTotal > 1 ? `×${r.hand.yakumanTotal}` : ''}`
                 : `${r.hand.han}翻 ${r.hand.fu}符`}
-              ／ {r.hand.score.total}点
+              <strong>{r.hand.score.total}点</strong>
             </p>
           </>
         )}
         <div className="delta">
           {r.scoreDelta.map((d, i) => (
             <span key={i} className={d >= 0 ? 'plus' : 'minus'}>
-              {SEAT_NAME[i]}: {d >= 0 ? '+' : ''}{d}
+              {SEAT_NAME[i]} {d >= 0 ? '+' : ''}{d}
             </span>
           ))}
         </div>
@@ -312,7 +291,7 @@ function FinalOverlay({ ranking, onRestart }: { ranking: RankEntry[]; onRestart:
         <h2>最終順位</h2>
         <ol className="ranking">
           {ranking.map((e) => (
-            <li key={e.seat}>{e.rank}位 {SEAT_NAME[e.seat]} — {e.score}</li>
+            <li key={e.seat}><span className="rank">{e.rank}位</span> {SEAT_NAME[e.seat]} <span>{e.score}</span></li>
           ))}
         </ol>
         <button className="primary" onClick={onRestart}>もう一度</button>

@@ -160,6 +160,7 @@ body {
 .card .yaku li { display: flex; justify-content: space-between; gap: 24px; padding: 1px 0; }
 .card .score-line { font-size: 16px; margin: 10px 0; display: flex; gap: 10px; justify-content: center; align-items: baseline; }
 .card .score-line strong { font-size: 26px; color: #b45309; }
+.card .pao-line { font-size: 13px; color: #b91c1c; margin: 4px 0 0; font-weight: 600; }
 .card .delta { display: flex; flex-direction: column; gap: 2px; font-size: 13px; margin: 12px 0; }
 .card .delta .plus { color: #15803d; }
 .card .delta .minus { color: #b91c1c; }

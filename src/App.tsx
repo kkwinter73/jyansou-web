@@ -270,6 +270,12 @@ function ResultOverlay({ game, onNext }: { game: GameState; onNext: () => void }
                 : `${r.hand.han}翻 ${r.hand.fu}符`}
               <strong>{r.hand.score.total}点</strong>
             </p>
+            {(() => {
+              const pao = game.pao[r.winner];
+              return pao && r.hand.yakuman.some((y) => y.name === pao.yakuman) ? (
+                <p className="pao-line">包: {SEAT_NAME[pao.by]} が{pao.yakuman}を責任払い</p>
+              ) : null;
+            })()}
           </>
         )}
         <div className="delta">

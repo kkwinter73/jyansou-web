@@ -186,7 +186,8 @@ export function App() {
               tile={t}
               big
               onClick={myTurn ? () => discardTile(t) : undefined}
-              disabled={myTurn && ((riichiMode && !riichiKinds.has(t.kind)) || kuikae.has(t.kind))}
+              // リーチ後はツモ切りのみ（手牌＝ツモ牌以外は打てない）
+              disabled={myTurn && (game.riichi[0] || (riichiMode && !riichiKinds.has(t.kind)) || kuikae.has(t.kind))}
             />
           ))}
           {drawn && (

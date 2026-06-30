@@ -6,12 +6,14 @@ import {
   chooseAction,
   startNextHand,
   seatWindOf,
+  DEFAULT_RULE,
   type GameState,
   type Action,
   type Seat,
   type Tile,
   type Meld,
   type RankEntry,
+  type RuleConfig,
 } from '@jyansou/core';
 import { tileLabel, tileSuitClass, WIND_LABEL } from './tiles.js';
 
@@ -80,14 +82,59 @@ function SeatInfo({ game, seat }: { game: GameState; seat: Seat }) {
   );
 }
 
+function StartScreen({ rule, onStart }: { rule: RuleConfig; onStart: (r: RuleConfig) => void }) {
+  const [gameLength, setGameLength] = useState<RuleConfig['gameLength']>(rule.gameLength);
+  const [akaCount, setAkaCount] = useState(rule.akaCount);
+  const [agariyame, setAgariyame] = useState(rule.agariyame);
+
+  return (
+    <div className="start">
+      <div className="start-card">
+        <h1>jyansou</h1>
+        <p className="start-sub">対CPU 麻雀</p>
+
+        <div className="setting">
+          <span className="setting-label">対局</span>
+          <div className="seg">
+            <button className={gameLength === 'tonpuu' ? 'on' : ''} onClick={() => setGameLength('tonpuu')}>東風戦</button>
+            <button className={gameLength === 'hanchan' ? 'on' : ''} onClick={() => setGameLength('hanchan')}>半荘戦</button>
+          </div>
+        </div>
+
+        <div className="setting">
+          <span className="setting-label">赤ドラ</span>
+          <div className="seg">
+            {[0, 1, 2, 3].map((n) => (
+              <button key={n} className={akaCount === n ? 'on' : ''} onClick={() => setAkaCount(n)}>{n}枚</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="setting">
+          <span className="setting-label">アガリやめ</span>
+          <div className="seg">
+            <button className={agariyame ? 'on' : ''} onClick={() => setAgariyame(true)}>あり</button>
+            <button className={!agariyame ? 'on' : ''} onClick={() => setAgariyame(false)}>なし</button>
+          </div>
+        </div>
+
+        <button className="primary start-btn" onClick={() => onStart({ ...rule, gameLength, akaCount, agariyame })}>
+          対局開始
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function App() {
-  const [game, setGame] = useState<GameState>(() => createGame(newSeed()));
+  const [rule, setRule] = useState<RuleConfig>(DEFAULT_RULE);
+  const [game, setGame] = useState<GameState | null>(null);
   const [final, setFinal] = useState<RankEntry[] | null>(null);
   const [riichiMode, setRiichiMode] = useState(false);
 
   useEffect(() => {
     const s = game;
-    if (final) return;
+    if (!s || final) return;
     let run: (() => GameState) | null = null;
     if (s.phase === 'draw') run = () => apply(s, { type: 'draw' }).state;
     else if (s.phase === 'discard' && s.turn !== 0) run = () => apply(s, chooseAction(s, s.turn)).state;
@@ -101,9 +148,17 @@ export function App() {
   }, [game, final]);
 
   const act = useCallback((action: Action) => {
-    setGame((g) => apply(g, action).state);
+    setGame((g) => (g ? apply(g, action).state : g));
     setRiichiMode(false);
   }, []);
+
+  const startGame = (r: RuleConfig) => {
+    setRule(r);
+    setFinal(null);
+    setGame(createGame(newSeed(), r));
+  };
+
+  if (!game) return <StartScreen rule={rule} onStart={startGame} />;
 
   const myTurn = game.phase === 'discard' && game.turn === 0;
   const myActions = myTurn ? legalActions(game, 0) : [];
@@ -134,7 +189,7 @@ export function App() {
   };
   const restart = () => {
     setFinal(null);
-    setGame(createGame(newSeed()));
+    setGame(null); // 設定画面へ戻る（ルール変更可）
   };
 
   const me = game.hands[0];
@@ -149,7 +204,7 @@ export function App() {
         {/* 中央ハブ */}
         <div className="hub">
           <div className="round">{WIND_LABEL[game.wind]}{game.dealer + 1}局</div>
-          <div className="sub">{game.honba}本場 ・ 供託{game.riichiSticks}</div>
+          <div className="sub">{game.rule.gameLength === 'tonpuu' ? '東風' : '半荘'} ・ {game.honba}本場 ・ 供託{game.riichiSticks}</div>
           <div className="wall">残り {wallLeft}</div>
           <div className="dora">
             <span className="dora-label">ドラ</span>

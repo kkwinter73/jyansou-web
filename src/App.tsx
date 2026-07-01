@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   createGame,
   apply,
@@ -8,6 +8,7 @@ import {
   seatWindOf,
   DEFAULT_RULE,
   type GameState,
+  type GameEvent,
   type Action,
   type Seat,
   type Tile,
@@ -18,7 +19,34 @@ import {
 import { tileLabel, tileSuitClass, WIND_LABEL } from './tiles.js';
 
 const CPU_DELAY = 420;
+const TURN_MS = 10000; // 人間の手番/鳴き応答の制限時間
+const MELD_LABEL: Record<string, string> = { pon: 'ポン', chi: 'チー', minkan: 'カン', ankan: 'カン', kakan: 'カン' };
 const SEAT_NAME = ['あなた', 'CPU右', 'CPU対面', 'CPU左'];
+
+/** 演出バナー（鳴き・和了・局開始）。 */
+type Banner = { kind: 'call' | 'riichi' | 'win' | 'round'; seat: Seat; text: string };
+
+/** 表示値を target へなめらかに補間するカウントアップ。点棒の増減アニメに使う。 */
+function useCountUp(target: number, ms = 550): number {
+  const [val, setVal] = useState(target);
+  const from = useRef(target);
+  useEffect(() => {
+    const start = from.current;
+    from.current = target;
+    if (start === target) return;
+    let raf = 0;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - t0) / ms);
+      const eased = 1 - (1 - p) * (1 - p);
+      setVal(Math.round(start + (target - start) * eased));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, ms]);
+  return val;
+}
 const ABORT_REASON: Record<string, string> = {
   kyuushu: '九種九牌',
   suufon: '四風連打',
@@ -71,11 +99,12 @@ function callLabel(a: Action): string {
 
 function SeatInfo({ game, seat }: { game: GameState; seat: Seat }) {
   const active = game.turn === seat && game.phase !== 'over';
+  const score = useCountUp(game.scores[seat]);
   return (
     <div className={`info i${seat}${active ? ' active' : ''}`}>
       <span className="wind">{WIND_LABEL[seatWindOf(game, seat)]}</span>
       <span className="name">{SEAT_NAME[seat]}</span>
-      <span className="score">{game.scores[seat]}</span>
+      <span className="score">{score}</span>
       {game.dealer === seat && <span className="dealer">親</span>}
       {game.riichi[seat] && <span className="riichi-stick" title="リーチ" />}
     </div>
@@ -131,31 +160,84 @@ export function App() {
   const [game, setGame] = useState<GameState | null>(null);
   const [final, setFinal] = useState<RankEntry[] | null>(null);
   const [riichiMode, setRiichiMode] = useState(false);
+  const [banner, setBanner] = useState<Banner | null>(null);
 
+  // apply の events から演出バナー（鳴き/リーチ/和了）を立てる。
+  const fireBanner = (events: GameEvent[]) => {
+    for (const e of events) {
+      if (e.type === 'discard' && e.riichi) return setBanner({ kind: 'riichi', seat: e.seat, text: 'リーチ' });
+      if (e.type === 'call') return setBanner({ kind: 'call', seat: e.seat, text: MELD_LABEL[e.meld.type] });
+      if (e.type === 'result' && (e.result.type === 'tsumo' || e.result.type === 'ron'))
+        return setBanner({ kind: 'win', seat: e.result.winner, text: e.result.type === 'tsumo' ? 'ツモ' : 'ロン' });
+    }
+  };
+
+  const advance = (source: GameState, action: Action) => {
+    const { state, events } = apply(source, action);
+    fireBanner(events);
+    setGame(state);
+  };
+
+  const act = (action: Action) => {
+    if (!game) return;
+    advance(game, action);
+    setRiichiMode(false);
+  };
+
+  const showRound = (st: GameState) =>
+    setBanner({ kind: 'round', seat: st.dealer, text: `${WIND_LABEL[st.wind]}${st.dealer + 1}局` });
+
+  // 自動進行（ツモ・CPU打牌・CPU鳴き応答）。演出中は止める。
   useEffect(() => {
     const s = game;
-    if (!s || final) return;
-    let run: (() => GameState) | null = null;
-    if (s.phase === 'draw') run = () => apply(s, { type: 'draw' }).state;
-    else if (s.phase === 'discard' && s.turn !== 0) run = () => apply(s, chooseAction(s, s.turn)).state;
+    if (!s || final || banner) return;
+    let action: Action | null = null;
+    if (s.phase === 'draw') action = { type: 'draw' };
+    else if (s.phase === 'discard' && s.turn !== 0) action = chooseAction(s, s.turn);
     else if (s.phase === 'afterDiscard' || s.phase === 'afterKakan') {
       const cpu = s.pendingCalls.find((p) => p.seat !== 0 && !s.callResponses[p.seat]);
-      if (cpu) run = () => apply(s, chooseAction(s, cpu.seat)).state;
+      if (cpu) action = chooseAction(s, cpu.seat);
     }
-    if (!run) return;
-    const timer = setTimeout(() => setGame((g) => (g === s ? run!() : g)), CPU_DELAY);
+    if (!action) return;
+    const a = action;
+    const timer = setTimeout(() => advance(s, a), CPU_DELAY);
     return () => clearTimeout(timer);
-  }, [game, final]);
+  }, [game, final, banner]);
 
-  const act = useCallback((action: Action) => {
-    setGame((g) => (g ? apply(g, action).state : g));
-    setRiichiMode(false);
-  }, []);
+  // バナーの自動消去。
+  useEffect(() => {
+    if (!banner) return;
+    const ms = banner.kind === 'win' ? 1200 : banner.kind === 'round' ? 1300 : 850;
+    const t = setTimeout(() => setBanner(null), ms);
+    return () => clearTimeout(t);
+  }, [banner]);
+
+  // 人間の手番/鳴き応答の制限時間。切れたら自動処理（ツモ切り／スキップ）。
+  useEffect(() => {
+    const s = game;
+    if (!s || final || banner) return;
+    const myDiscard = s.phase === 'discard' && s.turn === 0 && !!s.drawnTile;
+    const myCall =
+      (s.phase === 'afterDiscard' || s.phase === 'afterKakan') &&
+      s.pendingCalls.some((p) => p.seat === 0) &&
+      !s.callResponses[0];
+    if (!myDiscard && !myCall) return;
+    // 和了できる局面（ツモ/ロン）は自動処理しない（勝ち牌を自動で捨て/見逃さない）。
+    if (legalActions(s, 0).some((a) => a.type === 'tsumo' || a.type === 'ron')) return;
+    const t = setTimeout(() => {
+      if (myDiscard && s.drawnTile) advance(s, { type: 'discard', tile: s.drawnTile });
+      else if (myCall) advance(s, { type: 'pass', seat: 0 });
+      setRiichiMode(false);
+    }, TURN_MS);
+    return () => clearTimeout(t);
+  }, [game, final, banner]);
 
   const startGame = (r: RuleConfig) => {
     setRule(r);
     setFinal(null);
-    setGame(createGame(newSeed(), r));
+    const g = createGame(newSeed(), r);
+    setGame(g);
+    showRound(g);
   };
 
   if (!game) return <StartScreen rule={rule} onStart={startGame} />;
@@ -185,7 +267,10 @@ export function App() {
   const nextHand = () => {
     const r = startNextHand(game);
     if (r.over) setFinal(r.ranking);
-    else setGame(r.state);
+    else {
+      setGame(r.state);
+      showRound(r.state);
+    }
   };
   const restart = () => {
     setFinal(null);
@@ -196,6 +281,7 @@ export function App() {
   const drawn = game.turn === 0 && game.phase === 'discard' ? game.drawnTile : null;
   const inHand = me.concealed.filter((t) => !drawn || t.id !== drawn.id);
   const wallLeft = game.liveEnd - game.drawIndex;
+  const totalDiscards = game.discards.reduce((n, d) => n + d.length, 0);
   const seats: Seat[] = [0, 1, 2, 3];
 
   return (
@@ -230,6 +316,13 @@ export function App() {
         {/* 席情報 */}
         {seats.map((s) => <SeatInfo key={s} game={game} seat={s} />)}
       </div>
+
+      {/* 手番タイマー（自分の番/鳴き応答のみ。和了できる局面は出さない） */}
+      {((myTurn && !canTsumo) || (myCallPending && !callActions.some((a) => a.type === 'ron'))) && !banner && (
+        <div className="turn-timer" key={`${game.phase}-${totalDiscards}-${game.turn}`}>
+          <div className="turn-bar" style={{ animationDuration: `${TURN_MS}ms` }} />
+        </div>
+      )}
 
       {/* 自分の手牌 */}
       <div className="myarea">
@@ -279,7 +372,14 @@ export function App() {
         </div>
       </div>
 
-      {game.phase === 'over' && !final && <ResultOverlay game={game} onNext={nextHand} />}
+      {banner && (
+        <div className={`banner b-${banner.kind} bs-${banner.seat}`} key={`${banner.kind}-${banner.seat}-${banner.text}`}>
+          {banner.kind !== 'round' && <span className="banner-seat">{SEAT_NAME[banner.seat]}</span>}
+          <span className="banner-text">{banner.text}</span>
+        </div>
+      )}
+
+      {game.phase === 'over' && !final && !banner && <ResultOverlay game={game} onNext={nextHand} />}
       {final && <FinalOverlay ranking={final} onRestart={restart} />}
     </div>
   );
@@ -308,16 +408,19 @@ function ResultOverlay({ game, onNext }: { game: GameState; onNext: () => void }
           <>
             <h2>{SEAT_NAME[r.winner]} {r.type === 'tsumo' ? 'ツモ' : 'ロン'}</h2>
             <ul className="yaku">
-              {r.hand.yakumanTotal > 0 ? (
-                r.hand.yakuman.map((y) => <li key={y.name}>{y.name}</li>)
-              ) : (
-                <>
-                  {r.hand.yaku.map((y) => <li key={y.name}>{y.name} <span>{y.han}翻</span></li>)}
-                  {r.hand.dora.dora > 0 && <li>ドラ <span>{r.hand.dora.dora}</span></li>}
-                  {r.hand.dora.aka > 0 && <li>赤ドラ <span>{r.hand.dora.aka}</span></li>}
-                  {r.hand.dora.ura > 0 && <li>裏ドラ <span>{r.hand.dora.ura}</span></li>}
-                </>
-              )}
+              {(r.hand.yakumanTotal > 0
+                ? r.hand.yakuman.map((y) => ({ name: y.name, sub: '' as string | number }))
+                : [
+                    ...r.hand.yaku.map((y) => ({ name: y.name, sub: `${y.han}翻` as string | number })),
+                    ...(r.hand.dora.dora > 0 ? [{ name: 'ドラ', sub: r.hand.dora.dora }] : []),
+                    ...(r.hand.dora.aka > 0 ? [{ name: '赤ドラ', sub: r.hand.dora.aka }] : []),
+                    ...(r.hand.dora.ura > 0 ? [{ name: '裏ドラ', sub: r.hand.dora.ura }] : []),
+                  ]
+              ).map((y, i) => (
+                <li key={y.name} style={{ animationDelay: `${i * 0.09}s` }}>
+                  {y.name} {y.sub !== '' && <span>{y.sub}</span>}
+                </li>
+              ))}
             </ul>
             <p className="score-line">
               {r.hand.yakumanTotal > 0

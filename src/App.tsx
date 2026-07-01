@@ -25,6 +25,7 @@ const SEAT_NAME = ['あなた', 'CPU右', 'CPU対面', 'CPU左'];
 
 /** 演出バナー（鳴き・和了・局開始）。 */
 type Banner = { kind: 'call' | 'riichi' | 'win' | 'round'; seat: Seat; text: string };
+const bannerMs = (kind: Banner['kind']) => (kind === 'win' ? 1400 : kind === 'round' ? 1300 : 900);
 
 /** 表示値を target へなめらかに補間するカウントアップ。点棒の増減アニメに使う。 */
 function useCountUp(target: number, ms = 550): number {
@@ -207,8 +208,7 @@ export function App() {
   // バナーの自動消去。
   useEffect(() => {
     if (!banner) return;
-    const ms = banner.kind === 'win' ? 1200 : banner.kind === 'round' ? 1300 : 850;
-    const t = setTimeout(() => setBanner(null), ms);
+    const t = setTimeout(() => setBanner(null), bannerMs(banner.kind));
     return () => clearTimeout(t);
   }, [banner]);
 
@@ -372,10 +372,24 @@ export function App() {
         </div>
       </div>
 
+      {banner?.kind === 'riichi' && <div className="riichi-flash" />}
+
+      {banner?.kind === 'win' &&
+        game.result &&
+        seats.map((s) =>
+          game.result!.scoreDelta[s] !== 0 ? (
+            <div key={s} className={`delta-float d${s} ${game.result!.scoreDelta[s] > 0 ? 'plus' : 'minus'}`}>
+              {game.result!.scoreDelta[s] > 0 ? '+' : ''}{game.result!.scoreDelta[s]}
+            </div>
+          ) : null,
+        )}
+
       {banner && (
         <div className={`banner b-${banner.kind} bs-${banner.seat}`} key={`${banner.kind}-${banner.seat}-${banner.text}`}>
-          {banner.kind !== 'round' && <span className="banner-seat">{SEAT_NAME[banner.seat]}</span>}
-          <span className="banner-text">{banner.text}</span>
+          <div className="banner-inner" style={{ animationDuration: `${bannerMs(banner.kind)}ms` }}>
+            {banner.kind !== 'round' && <span className="banner-seat">{SEAT_NAME[banner.seat]}</span>}
+            <span className="banner-text">{banner.text}</span>
+          </div>
         </div>
       )}
 
